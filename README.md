@@ -1,6 +1,6 @@
 # K8s App Shipping Engine
 
-> **Template 2: The "K8s App Shipping" Engine**
+> **Template: The "K8s App Shipping" Engine**
 > Stack: **Docker + Kubernetes + Helm/Kustomize + GitHub Actions** on GCP/GKE
 
 ---
