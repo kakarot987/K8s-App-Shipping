@@ -1,0 +1,58 @@
+##############################################################################
+# k8s/overlays/dev/kustomization.yaml
+# Dev environment — smaller resources, 1 replica, debug logging
+##############################################################################
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+bases:
+  - ../../base
+
+namePrefix: dev-
+
+commonLabels:
+  environment: dev
+
+commonAnnotations:
+  deployment.environment: dev
+
+# Image tag is updated by CI via: kustomize edit set image
+images:
+  - name: my-service
+    newName: gcr.io/my-project-dev/my-service
+    newTag: latest
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: my-service
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "50m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "64Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+    target:
+      kind: Deployment
+      name: my-service
+
+configMapGenerator:
+  - name: my-service-config
+    behavior: merge
+    literals:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
