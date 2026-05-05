@@ -32,7 +32,7 @@ The worker node(s) host the Pods that are the components of the application work
 
 This document outlines the various components you need to have for a complete and working Kubernetes cluster.
 
-<img width="1402" height="882" alt="image" src="https://github.com/user-attachments/assets/0a775e5b-816a-403e-9f82-229dba67b2fb" />
+![img.png](img.png)
 
 ### Control plane components
 The control plane's components make global decisions about the cluster (for example, scheduling), as well as detecting and responding to cluster events (for example, starting up a new pod when a Deployment's replicas field is unsatisfied).

@@ -10,8 +10,7 @@ A Kubernetes cluster consists of two types of resources:
  - Nodes are the workers that run applications
 
 ### Cluster Diagram
-<img width="476" height="385" alt="image" src="https://github.com/user-attachments/assets/0faf835c-c1d0-4b3a-bd12-9aa6fefc7674" />
-
+![img_5.png](img_5.png)
 ```
 The Control Plane is responsible for managing the cluster. The Control Plane coordinates all activities in your cluster, such as scheduling applications, maintaining applications' desired state, scaling applications, and rolling out new updates.
 ```
