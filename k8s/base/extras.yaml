@@ -1,6 +1,3 @@
-##############################################################################
-# k8s/base/hpa.yaml — Horizontal Pod Autoscaler
-##############################################################################
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -26,9 +23,6 @@ spec:
           type: Utilization
           averageUtilization: 80
 ---
-##############################################################################
-# k8s/base/pdb.yaml — Pod Disruption Budget (always keep 1 pod alive)
-##############################################################################
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -39,20 +33,12 @@ spec:
     matchLabels:
       app: my-service
 ---
-##############################################################################
-# k8s/base/serviceaccount.yaml — Workload Identity binding
-##############################################################################
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: my-service-sa
-  annotations:
-    # Replace with your GCP SA for Workload Identity
-    iam.gke.io/gcp-service-account: my-service@PROJECT_ID.iam.gserviceaccount.com
+  # Add a real iam.gke.io/gcp-service-account annotation only if required.
 ---
-##############################################################################
-# k8s/base/configmap.yaml — Non-sensitive configuration
-##############################################################################
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -1,14 +1,9 @@
-##############################################################################
-# k8s/base/deployment.yaml
-# Base Deployment — overridden per environment via Kustomize overlays
-##############################################################################
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-service
   labels:
     app: my-service
-    version: "latest"
 spec:
   replicas: 2
   selector:
@@ -18,35 +13,29 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0      # Zero-downtime deploys
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: my-service
       annotations:
-        # Datadog APM — enable tracing
-        ad.datadoghq.com/my-service.logs: '[{"source":"nodejs","service":"my-service"}]'
         prometheus.io/scrape: "true"
-        prometheus.io/port:   "3000"
-        prometheus.io/path:   "/metrics"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: my-service-sa
-
-      # Security context — all containers run as non-root
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
-
       containers:
         - name: my-service
-          image: my-service:latest      # kustomize overwrites this tag
+          image: my-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
               name: http
               protocol: TCP
-
           env:
             - name: NODE_ENV
               valueFrom:
@@ -55,12 +44,6 @@ spec:
                   key: NODE_ENV
             - name: PORT
               value: "3000"
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: my-service-secrets
-                  key: db-password
-
           resources:
             requests:
               cpu: "100m"
@@ -68,16 +51,12 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
-
-          # Startup probe — gives the app time to cold-start
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             failureThreshold: 30
             periodSeconds: 5
-
-          # Liveness probe — restart if app hangs
           livenessProbe:
             httpGet:
               path: /healthz
@@ -86,8 +65,6 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
-
-          # Readiness probe — only send traffic when truly ready
           readinessProbe:
             httpGet:
               path: /readyz
@@ -96,28 +73,22 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
-
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-
           volumeMounts:
             - name: tmp
-              mountPath: /tmp             # writable tmp for read-only root FS
-
+              mountPath: /tmp
       volumes:
         - name: tmp
           emptyDir: {}
-
-      # Spread pods across zones for HA
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule
+          whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app: my-service
-
       terminationGracePeriodSeconds: 30

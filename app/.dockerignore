@@ -1,0 +1,13 @@
+node_modules/
+coverage/
+test/
+**/*.test.js
+**/*.spec.js
+.eslintrc*
+.env*
+!.env.example
+npm-debug.log*
+.git/
+.idea/
+.vscode/
+*.md

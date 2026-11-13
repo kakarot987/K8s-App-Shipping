@@ -1,19 +1,10 @@
-##############################################################################
-# helm/Chart.yaml — Helm chart metadata
-# Use Helm instead of Kustomize if you prefer templating over patching
-##############################################################################
 apiVersion: v2
 name: my-service
-description: "Microservice Helm chart — K8s App Shipping Engine"
+description: "Sample Kubernetes microservice chart"
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "1.0.0"
-
 keywords:
   - microservice
   - nodejs
-  - gke
-
-maintainers:
-  - name: Platform Team
-    email: platform@myorg.com
+  - kubernetes

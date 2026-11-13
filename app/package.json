@@ -7,8 +7,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "build": "echo 'No build step — pure JS. Replace with tsc for TypeScript.'",
-    "test": "jest --coverage",
-    "lint": "eslint src/"
+    "test": "jest --runInBand --coverage",
+    "lint": "eslint src/ test/"
   },
   "dependencies": {
     "express": "^4.18.2",

@@ -1,51 +1,29 @@
-##############################################################################
-# k8s/overlays/prod/kustomization.yaml
-# Prod environment — HA replicas, full resources, strict probes
-##############################################################################
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 namespace: prod
-
-bases:
+resources:
   - ../../base
-
-commonLabels:
-  environment: prod
-
+labels:
+  - pairs:
+      environment: prod
+    includeSelectors: true
 commonAnnotations:
   deployment.environment: prod
 
-# Image tag is updated by CI via: kustomize edit set image
 images:
   - name: my-service
-    newName: gcr.io/my-project-prod/my-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/services/my-service
     newTag: latest
 
 patches:
-  # Scale to 3 replicas minimum in prod
-  - patch: |-
+  - target:
+      kind: Deployment
+      name: my-service
+    patch: |-
       - op: replace
         path: /spec/replicas
         value: 3
-    target:
-      kind: Deployment
-      name: my-service
-
-  # Update HPA for prod traffic
-  - patch: |-
-      - op: replace
-        path: /spec/minReplicas
-        value: 3
-      - op: replace
-        path: /spec/maxReplicas
-        value: 20
-    target:
-      kind: HorizontalPodAutoscaler
-      name: my-service-hpa
-
-  # Stricter resource limits for prod billing predictability
-  - patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
         value: "250m"
@@ -58,13 +36,23 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: "1Gi"
-    target:
-      kind: Deployment
-      name: my-service
-
-configMapGenerator:
-  - name: my-service-config
-    behavior: merge
-    literals:
-      - NODE_ENV=production
-      - LOG_LEVEL=warn
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: my-service-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+  - target:
+      kind: ConfigMap
+      name: my-service-config
+    patch: |-
+      - op: replace
+        path: /data/NODE_ENV
+        value: production
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: warn

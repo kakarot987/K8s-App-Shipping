@@ -1,171 +1,136 @@
 # K8s App Shipping Engine
 
-> **Template: The "K8s App Shipping" Engine**
-> Stack: **Docker + Kubernetes + Helm/Kustomize + GitHub Actions** on GCP/GKE
+A **sample** Node.js microservice with a Docker image, Kustomize environments, a working starter Helm chart, and a GitHub Actions pipeline. This is a template: GCP credentials, clusters, Artifact Registry, environment approvals, and service-specific dependency checks must be configured before production use.
 
----
+## Included
 
-## Overview
+- Express app with `/healthz`, `/readyz`, and `/metrics` (Prometheus).
+- Jest/Supertest endpoint tests and ESLint checks.
+- Multi-stage Docker build with a non-root runtime user and read-only container filesystem in Kubernetes.
+- Kustomize base, `dev` and `prod` overlays, plus a separate Helm chart.
+- GitHub Actions: test and lint on PRs; on pushes to `develop` or `main`, build, push, vulnerability scan, and deploy to dev. Pushes to `main` also deploy to prod **if the `prod` GitHub Environment requires and receives approval**.
 
-Every new microservice you build drops into this template and gets:
+## Directory layout
 
-- **Multi-stage Docker build** — lean production image with non-root user, read-only FS
-- **Kustomize overlays** — single base manifest, env-specific patches (dev/prod)
-- **Helm chart** — alternative to Kustomize if you prefer templating
-- **GitHub Actions pipeline** — test → build → Trivy scan → push to GCR → deploy dev → gate → deploy prod
-- **Health endpoints** — `/healthz` (liveness), `/readyz` (readiness), `/metrics` (Prometheus)
-- **Graceful shutdown** — SIGTERM handler drains connections before pod terminates
-- **HPA + PDB** — auto-scales on CPU/memory, maintains minimum availability during disruptions
-
----
-
-## Folder Structure
-
-```
-.
-├── .github/workflows/
-│   └── build-and-deploy.yml   # Full CI/CD pipeline
-├── app/
-│   ├── src/server.js          # Express app with health + metrics endpoints
-│   └── package.json
-├── docker/
-│   ├── Dockerfile             # Multi-stage build (deps → build → runtime)
-│   └── .dockerignore          # Keeps image lean (excludes infra, tests, docs)
-├── k8s/
-│   ├── base/                  # Deployment, Service, HPA, PDB, ConfigMap
-│   └── overlays/
-│       ├── dev/               # 1 replica, debug logging, smaller resources
-│       └── prod/              # 3+ replicas, HA, stricter limits
-├── helm/
-│   ├── Chart.yaml
-│   ├── values.yaml            # Defaults (overridden per env with --values flag)
-│   └── templates/             # Add your Helm templates here
-├── scripts/
-│   └── health-check.sh        # Post-deploy verification (rollout + HTTP + replicas)
-└── README.md
+```text
+.github/workflows/build-and-deploy.yml
+app/src/server.js
+app/test/server.test.js
+app/.eslintrc.cjs
+app/.dockerignore
+app/package.json
+app/package-lock.json
+docker/Dockerfile
+k8s/base/
+k8s/overlays/dev/
+k8s/overlays/prod/
+helm/Chart.yaml
+helm/values.yaml
+helm/templates/
+scripts/health-check.sh
 ```
 
----
+## Local development
 
-## Initial Setup
-
-### 1. Rename `my-service` throughout
+Requires Node.js 20+.
 
 ```bash
-# Quick find-replace
-SERVICE_NAME="payment-service"   # ← your service name
-find . -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.js" -o -name "*.json" \) \
-  -exec sed -i "s/my-service/${SERVICE_NAME}/g" {} +
+npm ci --prefix app
+npm run lint --prefix app
+npm test --prefix app
+npm start --prefix app
 ```
 
-### 2. Update GCR image references
-
-Edit `k8s/overlays/dev/kustomization.yaml` and `prod/kustomization.yaml`:
-```yaml
-images:
-  - name: my-service
-    newName: gcr.io/YOUR_PROJECT_ID/your-service-name
-```
-
-### 3. Set GitHub Secrets
-
-| Secret | Value |
-|--------|-------|
-| `GCP_PROJECT_ID` | Your GCP project ID |
-| `GCP_WIF_PROVIDER` | Workload Identity Federation provider |
-| `GCP_SA_EMAIL` | Terraform/deploy service account email |
-| `GCP_WIF_PROVIDER_PROD` | Prod WIF provider |
-| `GCP_SA_EMAIL_PROD` | Prod service account |
-| `DATADOG_API_KEY` | For deployment event annotations |
-
----
-
-## CI/CD Pipeline Flow
-
-```
-PR opened
-  └─ Test (npm test)
-  └─ Lint (eslint)
-
-Merge to develop / main
-  └─ Build multi-stage Docker image (cached layers via GitHub Actions cache)
-  └─ Tag image with short Git SHA (e.g. gcr.io/project/service:a1b2c3d4)
-  └─ Push :sha-tag + :latest to GCR
-  └─ Trivy vulnerability scan (blocks on CRITICAL CVEs)
-  └─ Deploy to dev (kustomize overlay → kubectl apply)
-  └─ Run health-check.sh (rollout status + HTTP /healthz)
-
-Merge to main only, after dev deploy
-  └─ [Manual approval gate via GitHub Environment]
-  └─ Deploy to prod (prod overlay)
-  └─ Run health-check.sh
-  └─ Annotate Datadog with deployment event
-```
-
----
-
-## Local Development
+From a second terminal:
 
 ```bash
-# Run the app locally
-cd app && npm install && npm start
+curl --fail http://localhost:3000/healthz
+curl --fail http://localhost:3000/readyz
+curl --fail http://localhost:3000/metrics
+```
 
-# Build and run with Docker
-docker build -f docker/Dockerfile -t my-service:local .
-docker run -p 3000:3000 my-service:local
+The sample has **no database or cache dependency**. `/readyz` returns HTTP 503 during shutdown, otherwise 200. Extend it with dependency checks when adding real dependencies. The health endpoints do not prove a real workload's downstream services are healthy.
 
-# Test health endpoints
-curl http://localhost:3000/healthz
-curl http://localhost:3000/readyz
-curl http://localhost:3000/metrics
+## Docker
 
-# Preview kustomize output without applying
+Build using `app/` as the **context** (not the repository root):
+
+```bash
+docker build -f docker/Dockerfile -t my-service:local ./app
+docker run --rm -p 3000:3000 my-service:local
+```
+
+The ignore file is `app/.dockerignore`, because Docker reads it from the context root. The production image contains app runtime dependencies and source, not test dependencies.
+
+## Kubernetes with Kustomize
+
+Preview the deployment (requires `kubectl` with Kustomize support or the standalone `kustomize` CLI):
+
+```bash
 kubectl kustomize k8s/overlays/dev
+kubectl kustomize k8s/overlays/prod
+```
 
-# Deploy manually to dev
+The dev Deployment is **`dev-my-service` in namespace `dev`**. The prod Deployment is **`my-service` in namespace `prod`**. The dev HPA scales from 1 to 3, and the prod HPA from 3 to 20. HPA requires the Kubernetes Metrics Server (or an equivalent metrics API). A 1-replica dev environment and its PodDisruptionBudget are not designed for high availability.
+
+For a manual dev deployment, configure the correct image first:
+
+```bash
+kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
 cd k8s/overlays/dev
-kustomize edit set image my-service=gcr.io/my-project/my-service:abc1234
+kustomize edit set image my-service=us-central1-docker.pkg.dev/PROJECT_ID/services/my-service:IMAGE_TAG
 kustomize build . | kubectl apply -f -
+cd ../../..
+kubectl rollout status deployment/dev-my-service -n dev
+bash scripts/health-check.sh dev-my-service dev
 ```
 
----
+Replace `PROJECT_ID` and `IMAGE_TAG`. The command `kustomize edit set image` changes the local overlay; reset/review that change before committing. Namespace creation requires appropriate cluster permissions. The health-check script reads the Deployment's `app` selector rather than assuming the Deployment name is a pod label; it **fails** if no running pod can be checked.
 
-## Switching Runtimes
+### Database credentials
 
-This template ships with Node.js. To use Python, Go, or Java:
+No database is used by this sample; there is no `DB_PASSWORD` variable or required Secret. When introducing a database, provision a real Kubernetes Secret securely via your deployment platform/secret manager and reference its key in the Deployment. Do not commit real passwords or Secret values into Git.
 
-**Python (FastAPI):**
-```dockerfile
-FROM python:3.12-slim AS runtime
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app/ .
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3000"]
+### Workload Identity
+
+The base ServiceAccount does not impersonate a GCP service account. Add the `iam.gke.io/gcp-service-account` annotation and corresponding IAM bindings if your application needs Workload Identity. The GitHub Actions deploy identity is configured separately through Workload Identity Federation.
+
+## Helm (alternative to Kustomize)
+
+The starter chart provides a Deployment, Service, ConfigMap, ServiceAccount, HPA, PDB, and optional Ingress. Helm is an alternative deployment path and is **not** what the GitHub Actions workflow currently deploys.
+
+```bash
+helm lint ./helm
+helm template demo ./helm --namespace dev \
+  --set image.repository=us-central1-docker.pkg.dev/PROJECT_ID/services/my-service \
+  --set image.tag=IMAGE_TAG
+# Only after configuring cluster access:
+helm upgrade --install demo ./helm --namespace dev --create-namespace \
+  --set image.repository=us-central1-docker.pkg.dev/PROJECT_ID/services/my-service \
+  --set image.tag=IMAGE_TAG
 ```
 
-**Go:**
-```dockerfile
-FROM golang:1.22-alpine AS build
-WORKDIR /app
-COPY go.* ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -o server ./cmd/server
+To run one replica without autoscaling, set `autoscaling.enabled=false`, `replicaCount=1`, and `pdb.enabled=false`. Configure ingress and Workload Identity in `helm/values.yaml` or your own override file. Do not deploy with the placeholder image path.
 
-FROM scratch AS runtime
-COPY --from=build /app/server /server
-CMD ["/server"]
-```
+## GitHub Actions setup
 
----
+Before deploying, configure these repository secrets and resources:
 
-## Security Decisions
+| Name | Purpose |
+| --- | --- |
+| `GCP_PROJECT_ID` | GCP project containing Artifact Registry images |
+| `GCP_WIF_PROVIDER` | Workload Identity Federation provider for build and dev |
+| `GCP_SA_EMAIL` | GCP service account for build and dev operations |
+| `GCP_WIF_PROVIDER_PROD` | Prod federation provider |
+| `GCP_SA_EMAIL_PROD` | GCP service account for prod deployments |
+| `DATADOG_API_KEY` | Optional Datadog deployment-event annotation |
 
-| Decision | Reason |
-|----------|--------|
-| Non-root user (`runAsUser: 1000`) | Prevents container breakout privilege escalation |
-| Read-only root filesystem | Detects unexpected file writes (malware, misconfigs) |
-| Drop ALL capabilities | Least-privilege; add back only what you need |
-| No `:latest` tag in prod | Immutable deploys — exact SHA pinning |
-| Trivy scan in CI | Blocks known CRITICAL CVEs before they reach the cluster |
-| `topologySpreadConstraints` | Pods spread across zones — survives a zone outage |
+Create a Docker Artifact Registry repository named **`services`** in **`us-central1`** (or update `GAR_REPOSITORY`, `GAR_REGISTRY` and `GCP_REGION` in the workflow). Grant the build identity Artifact Registry writer access and the deployment identities the required GKE/Kubernetes RBAC permissions. Ensure nodes can pull the Artifact Registry image. Create or configure `dev-gke-cluster` and `prod-gke-cluster`, or replace the workflow values. Configure GitHub `dev` and `prod` environments; **add required reviewers to `prod`** if a manual approval gate is expected.
+
+On a PR targeting `main`, only the tests and linting run; the build/deploy steps are push-only so pull requests do not require cloud credentials. On pushes to `develop` or `main`, the workflow pushes `us-central1-docker.pkg.dev/<PROJECT_ID>/services/my-service:<short-sha>`, scans for CRITICAL CVEs, deploys the dev overlay and checks rollout and HTTP health. On `main`, prod follows after dev succeeds and any configured environment approval. Builds also publish `:latest` for convenience; cluster deployments use the immutable short-SHA image tag.
+
+**Validation status:** This template requires a real, successful GitHub Actions run plus cloud infrastructure and secrets to claim end-to-end deployment readiness. Local syntax checks alone do not validate GKE authentication, deployment permissions, image pulling, vulnerability scan results, or live health checks.
+
+## Security notes
+
+The Kubernetes container uses non-root UID 1000, drops Linux capabilities, prevents privilege escalation, and mounts `/tmp` as writable while the root filesystem remains read-only. Default readiness only tracks shutdown state; add real dependency checks before marketing this as a production-ready service. Production resilience also depends on multi-zone cluster capacity, replica and PDB settings, metrics availability, and operational alerting.
