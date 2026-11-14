@@ -5,8 +5,10 @@ namespace: dev
 resources:
   - ../../base
 namePrefix: dev-
-commonLabels:
-  environment: dev
+labels:
+  - pairs:
+      environment: dev
+    includeSelectors: true
 commonAnnotations:
   deployment.environment: dev
 
