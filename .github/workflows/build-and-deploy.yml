@@ -36,11 +36,21 @@ jobs:
       - name: Test
         run: npm test --prefix app
 
-  build:
-    name: Build & Push
+  image-build:
+    name: Verify Docker image (no GCP)
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build local image
+        run: docker build -f docker/Dockerfile -t my-service:ci ./app
+
+  build:
+    name: Publish to Artifact Registry
+    runs-on: ubuntu-latest
+    needs: image-build
+    # Opt in only after repository secrets, Artifact Registry and GKE are configured.
+    if: github.event_name == 'push' && vars.GCP_DEPLOY_ENABLED == 'true'
     permissions:
       contents: read
       id-token: write
@@ -49,9 +59,20 @@ jobs:
       full_image: ${{ steps.meta.outputs.full_image }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate GCP publishing configuration
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+          SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+        run: |
+          if [[ -z "$PROJECT_ID" || -z "$WIF_PROVIDER" || -z "$SA_EMAIL" ]]; then
+            echo "::error::GCP_DEPLOY_ENABLED=true but GCP_PROJECT_ID, GCP_WIF_PROVIDER or GCP_SA_EMAIL is missing from repository Actions secrets."
+            exit 1
+          fi
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_EMAIL }}
       - name: Set up gcloud
@@ -95,7 +116,7 @@ jobs:
     name: Deploy to dev
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && vars.GCP_DEPLOY_ENABLED == 'true'
     environment: dev
     permissions:
       contents: read
@@ -133,16 +154,26 @@ jobs:
     name: Deploy to prod
     runs-on: ubuntu-latest
     needs: [build, deploy-dev]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.GCP_PROD_DEPLOY_ENABLED == 'true'
     environment: prod
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v4
+      - name: Validate production GCP configuration
+        env:
+          WIF_PROVIDER_PROD: ${{ secrets.GCP_WIF_PROVIDER_PROD }}
+          SA_EMAIL_PROD: ${{ secrets.GCP_SA_EMAIL_PROD }}
+        run: |
+          if [[ -z "$WIF_PROVIDER_PROD" || -z "$SA_EMAIL_PROD" ]]; then
+            echo "::error::GCP_PROD_DEPLOY_ENABLED=true but GCP_WIF_PROVIDER_PROD or GCP_SA_EMAIL_PROD is missing from the prod environment/repository."
+            exit 1
+          fi
       - name: Authenticate to GCP (prod)
         uses: google-github-actions/auth@v2
         with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER_PROD }}
           service_account: ${{ secrets.GCP_SA_EMAIL_PROD }}
       - name: Get GKE credentials (prod)
