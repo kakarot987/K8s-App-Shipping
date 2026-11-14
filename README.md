@@ -8,7 +8,7 @@ A **sample** Node.js microservice with a Docker image, Kustomize environments, a
 - Jest/Supertest endpoint tests and ESLint checks.
 - Multi-stage Docker build with a non-root runtime user and read-only container filesystem in Kubernetes.
 - Kustomize base, `dev` and `prod` overlays, plus a separate Helm chart.
-- GitHub Actions: test and lint on PRs; on pushes to `develop` or `main`, build, push, vulnerability scan, and deploy to dev. Pushes to `main` also deploy to prod **if the `prod` GitHub Environment requires and receives approval**.
+- GitHub Actions: test, lint, and Docker image build verification on PRs and pushes, **without cloud credentials**. Publishing and deploying to GCP on pushes are separately opt-in. Production deployment requires a second opt-in and should use a protected `prod` environment.
 
 ## Directory layout
 
@@ -114,7 +114,7 @@ To run one replica without autoscaling, set `autoscaling.enabled=false`, `replic
 
 ## GitHub Actions setup
 
-Before deploying, configure these repository secrets and resources:
+By default, CI runs tests and a Docker build but **does not publish or deploy**. To enable Google Cloud publishing and dev deployment, first configure these repository secrets and resources:
 
 | Name | Purpose |
 | --- | --- |
@@ -125,9 +125,13 @@ Before deploying, configure these repository secrets and resources:
 | `GCP_SA_EMAIL_PROD` | GCP service account for prod deployments |
 | `DATADOG_API_KEY` | Optional Datadog deployment-event annotation |
 
+Then open **Settings → Secrets and variables → Actions → Variables** and create repository variable `GCP_DEPLOY_ENABLED` with value `true`. Until enabled, the `Publish to Artifact Registry` and deployment jobs intentionally show as **skipped** while tests and Docker image checks run. The publishing job fails with a clear error if the required repository secrets are missing. Do not set this variable until GCP Workload Identity Federation, Artifact Registry and GKE are ready.
+
+To additionally allow production deployment from `main`, set `GCP_PROD_DEPLOY_ENABLED=true` and supply production federation/service-account secrets. These may be scoped to the GitHub `prod` environment. Configure **required reviewers** for that environment before enabling production deployment; an environment name alone does not enforce approval.
+
 Create a Docker Artifact Registry repository named **`services`** in **`us-central1`** (or update `GAR_REPOSITORY`, `GAR_REGISTRY` and `GCP_REGION` in the workflow). Grant the build identity Artifact Registry writer access and the deployment identities the required GKE/Kubernetes RBAC permissions. Ensure nodes can pull the Artifact Registry image. Create or configure `dev-gke-cluster` and `prod-gke-cluster`, or replace the workflow values. Configure GitHub `dev` and `prod` environments; **add required reviewers to `prod`** if a manual approval gate is expected.
 
-On a PR targeting `main`, only the tests and linting run; the build/deploy steps are push-only so pull requests do not require cloud credentials. On pushes to `develop` or `main`, the workflow pushes `us-central1-docker.pkg.dev/<PROJECT_ID>/services/my-service:<short-sha>`, scans for CRITICAL CVEs, deploys the dev overlay and checks rollout and HTTP health. On `main`, prod follows after dev succeeds and any configured environment approval. Builds also publish `:latest` for convenience; cluster deployments use the immutable short-SHA image tag.
+On a PR targeting `main`, tests, linting and a local Docker image build run without cloud credentials. On pushes to `develop` or `main`, the same validation runs; **only when `GCP_DEPLOY_ENABLED=true`** does the workflow push `us-central1-docker.pkg.dev/<PROJECT_ID>/services/my-service:<short-sha>`, scans for CRITICAL CVEs, deploys the dev overlay and checks rollout and HTTP health. On `main`, prod follows after dev succeeds **only when `GCP_PROD_DEPLOY_ENABLED=true`**, and after any configured environment approval. Builds also publish `:latest` for convenience; cluster deployments use the immutable short-SHA image tag.
 
 **Validation status:** This template requires a real, successful GitHub Actions run plus cloud infrastructure and secrets to claim end-to-end deployment readiness. Local syntax checks alone do not validate GKE authentication, deployment permissions, image pulling, vulnerability scan results, or live health checks.
 
